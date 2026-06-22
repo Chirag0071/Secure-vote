@@ -1,21 +1,3 @@
-/* ===== Design tokens =====
-   Palette:
-     --paper      #F5F6F3  cool paper white, page background
-     --card       #FFFFFF  card surfaces
-     --ink        #1B2A4A  deep navy ink, headings / primary text
-     --ink-soft   #4B5670  secondary text
-     --stamp      #B23A2F  stamp red, required actions / alerts
-     --seal       #2F6E4F  seal green, success / verified states
-     --brass      #A9863F  brass, accents on civic chrome
-     --line       #DAD7CC  hairline rule
-   Type:
-     display: 'Source Serif 4' (ballot / civic document feel)
-     body:    'Inter'
-     mono:    'IBM Plex Mono' (voter IDs, timestamps, tabular data)
-   Signature element: the perforated "ballot stub" card -- used for the
-   voter ID confirmation and the vote receipt, echoing a torn polling stub.
-*/
-
 :root {
   --paper: #F5F6F3;
   --card: #FFFFFF;
@@ -29,7 +11,6 @@
 }
 
 * { box-sizing: border-box; }
-
 body {
   margin: 0;
   background: var(--paper);
@@ -49,11 +30,9 @@ h1 { font-size: 2.1rem; font-weight: 700; }
 h2 { font-size: 1.4rem; font-weight: 600; }
 
 code, .mono { font-family: 'IBM Plex Mono', monospace; }
-
 a { color: var(--ink); text-decoration: none; }
 
 /* ---- header / footer ---- */
-
 .site-header {
   display: flex;
   justify-content: space-between;
@@ -128,7 +107,6 @@ a { color: var(--ink); text-decoration: none; }
   max-width: 480px;
   margin: 12px auto 32px;
 }
-
 .hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
 
 /* ---- generic card / form ---- */
@@ -201,7 +179,6 @@ button:hover, a.button:hover { opacity: 0.88; }
   overflow: hidden;
   background: #000;
 }
-
 .camera-frame video, .camera-frame canvas { width: 100%; display: block; }
 
 .status-line {
