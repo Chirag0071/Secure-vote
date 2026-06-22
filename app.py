@@ -1,51 +1,20 @@
-"""
-app.py
-SecureVote -- Face-authenticated voting system for college elections.
-FastAPI + MySQL version.
-
-Routes (unchanged in shape from the Flask version):
-  Voter-facing:
-    GET  /                  Landing page
-    GET  /register          Registration form (capture face once)
-    POST /api/register      Store encrypted face encoding for a new voter
-    GET  /vote               Enter voter ID, then capture a liveness burst
-    POST /api/authenticate  Liveness check + face match -> opens a short-lived
-                             "authenticated" session, single use
-    GET  /ballot             Candidate list (only reachable post-auth)
-    POST /api/cast-vote      Cast an anonymized ballot, burn the session
-
-  Admin-facing:
-    GET/POST /admin/login
-    GET      /admin/dashboard   Voter roll, live tally, audit log
-    POST     /admin/candidates  Add a candidate
-    GET      /admin/logout
-
-Run with:  uvicorn app:app --reload
-(or just `python app.py`, which does the same thing -- see bottom of file)
-"""
-
 import os
 import time
 from contextlib import asynccontextmanager
 from typing import Optional
-
 from dotenv import load_dotenv
-load_dotenv()  # must run before importing database -- it reads DB_* env vars at import time
-
+load_dotenv()  
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-
 import database as db
 import face_engine
 import auth
 from schemas import RegisterIn, AuthenticateIn, CastVoteIn
 
-AUTH_WINDOW_SECONDS = 120  # how long a face-authenticated session is valid to cast a vote
-
-
+AUTH_WINDOW_SECONDS = 120 
 def bootstrap():
     db.init_db()
     admin_username = os.environ.get("SECUREVOTE_ADMIN_USERNAME", "admin")
@@ -58,12 +27,10 @@ def bootstrap():
         db.add_candidate("Sample Candidate B", "Student Body President")
         print("[SecureVote] Seeded sample candidates -- replace via admin dashboard.")
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     bootstrap()
     yield
-
 
 app = FastAPI(title="SecureVote", lifespan=lifespan)
 
@@ -76,10 +43,8 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-
 def _client_ip(request: Request) -> Optional[str]:
     return request.client.host if request.client else None
-
 
 # ---------------- Voter-facing ----------------
 
@@ -114,9 +79,6 @@ def api_register(payload: RegisterIn, request: Request):
 
     duplicate_voter_id = face_engine.find_duplicate(encoding, db.list_all_encodings())
     if duplicate_voter_id:
-        # Don't reveal the matching voter_id to the caller -- that's exactly
-        # the kind of info that helps someone probe who else is registered.
-        # It IS logged for officers reviewing the audit log, though.
         db.log_event(
             voter_id,
             "register_duplicate_face",
@@ -133,11 +95,9 @@ def api_register(payload: RegisterIn, request: Request):
     db.log_event(voter_id, "register", ip_address=_client_ip(request))
     return {"ok": True}
 
-
 @app.get("/vote", response_class=HTMLResponse)
 def vote_page(request: Request):
     return templates.TemplateResponse(request, "vote.html")
-
 
 @app.post("/api/authenticate")
 def api_authenticate(payload: AuthenticateIn, request: Request):
@@ -197,7 +157,6 @@ def api_authenticate(payload: AuthenticateIn, request: Request):
     request.session["auth_expires"] = time.time() + AUTH_WINDOW_SECONDS
     return {"ok": True, "candidates": db.list_candidates()}
 
-
 def _current_authenticated_voter(request: Request) -> Optional[str]:
     voter_id = request.session.get("authenticated_voter_id")
     expires = request.session.get("auth_expires", 0)
@@ -205,14 +164,12 @@ def _current_authenticated_voter(request: Request) -> Optional[str]:
         return None
     return voter_id
 
-
 @app.get("/ballot", response_class=HTMLResponse)
 def ballot_page(request: Request):
     voter_id = _current_authenticated_voter(request)
     if not voter_id:
         return RedirectResponse("/vote", status_code=303)
     return templates.TemplateResponse(request, "ballot.html", {"candidates": db.list_candidates()})
-
 
 @app.post("/api/cast-vote")
 def api_cast_vote(payload: CastVoteIn, request: Request):
@@ -236,7 +193,6 @@ def api_cast_vote(payload: CastVoteIn, request: Request):
     request.session.pop("authenticated_voter_id", None)
     request.session.pop("auth_expires", None)
     return {"ok": True}
-
 
 # ---------------- Admin-facing ----------------
 
