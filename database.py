@@ -1,28 +1,3 @@
-"""
-database.py
-MySQL data access layer for SecureVote, via PyMySQL.
-
-Connection settings come from environment variables (see README), with
-local defaults for development:
-  SECUREVOTE_DB_HOST      default: localhost
-  SECUREVOTE_DB_PORT      default: 3306
-  SECUREVOTE_DB_USER      default: root
-  SECUREVOTE_DB_PASSWORD  default: "" (empty)
-  SECUREVOTE_DB_NAME      default: securevote
-
-Design note on vote secrecy (unchanged from the SQLite version):
-- `voters` holds identity + encrypted face encoding + has_voted flag.
-- `ballots` holds ONLY candidate_id + timestamp -- there is no voter_id
-  column on this table at all, so there's no join path from a cast ballot
-  back to a voter, even for someone with full DB access.
-- `audit_log` records *authentication* events, never which candidate was
-  chosen.
-
-See schema.sql for the same DDL as a standalone file, useful if you'd
-rather provision the database by hand (e.g. via the mysql CLI or a GUI)
-instead of letting init_db() create it.
-"""
-
 import os
 import datetime
 import contextlib
@@ -35,18 +10,12 @@ DB_USER = os.environ.get("SECUREVOTE_DB_USER", "root")
 DB_PASSWORD = os.environ.get("SECUREVOTE_DB_PASSWORD", "")
 DB_NAME = os.environ.get("SECUREVOTE_DB_NAME", "securevote")
 
-# Managed MySQL hosts (Aiven, PlanetScale, etc.) require TLS. Set
-# SECUREVOTE_DB_SSL_CA to the path of the CA cert they give you (safe to
-# commit -- it's a public cert, not a secret). Leave unset for plain local
-# MySQL, e.g. on localhost during development.
 DB_SSL_CA = os.environ.get("SECUREVOTE_DB_SSL_CA")
-
 
 def _ssl_kwargs():
     if not DB_SSL_CA:
         return {}
     return {"ssl_ca": DB_SSL_CA, "ssl_verify_cert": True}
-
 
 def get_conn(use_db=True):
     return pymysql.connect(
@@ -61,9 +30,7 @@ def get_conn(use_db=True):
         **_ssl_kwargs(),
     )
 
-
 def init_db():
-    # Step 1: make sure the database itself exists (connect with no db selected).
     conn = pymysql.connect(
         host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASSWORD, charset="utf8mb4", **_ssl_kwargs()
     )
@@ -77,7 +44,6 @@ def init_db():
     finally:
         conn.close()
 
-    # Step 2: create tables (idempotent).
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -139,8 +105,6 @@ def init_db():
 
 def now():
     return datetime.datetime.utcnow()
-
-
 # ---------- Voters ----------
 
 def create_voter(voter_id, name, email, encrypted_encoding):
@@ -153,7 +117,6 @@ def create_voter(voter_id, name, email, encrypted_encoding):
             )
         conn.commit()
 
-
 def get_voter(voter_id):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -161,13 +124,11 @@ def get_voter(voter_id):
             row = cur.fetchone()
             return row
 
-
 def mark_voted(voter_id):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             cur.execute("UPDATE voters SET has_voted = 1 WHERE voter_id = %s", (voter_id,))
         conn.commit()
-
 
 def record_failed_attempt(voter_id, lockout_minutes=5, max_attempts=5):
     with contextlib.closing(get_conn()) as conn:
@@ -185,7 +146,6 @@ def record_failed_attempt(voter_id, lockout_minutes=5, max_attempts=5):
                 )
         conn.commit()
 
-
 def reset_failed_attempts(voter_id):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -195,12 +155,10 @@ def reset_failed_attempts(voter_id):
             )
         conn.commit()
 
-
 def is_locked(voter):
     if not voter.get("locked_until"):
         return False
     return datetime.datetime.utcnow() < voter["locked_until"]
-
 
 def list_all_encodings():
     """
@@ -218,7 +176,6 @@ def list_all_encodings():
             cur.execute("SELECT voter_id, face_encoding FROM voters")
             return [(r["voter_id"], r["face_encoding"]) for r in cur.fetchall()]
 
-
 def list_voters():
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -227,8 +184,6 @@ def list_voters():
                 "ORDER BY registered_at DESC"
             )
             return cur.fetchall()
-
-
 # ---------- Candidates ----------
 
 def add_candidate(name, position):
@@ -237,14 +192,11 @@ def add_candidate(name, position):
             cur.execute("INSERT INTO candidates (name, position) VALUES (%s, %s)", (name, position))
         conn.commit()
 
-
 def list_candidates():
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM candidates ORDER BY position, name")
             return cur.fetchall()
-
-
 # ---------- Ballots (anonymized) ----------
 
 def cast_ballot(candidate_id):
@@ -255,7 +207,6 @@ def cast_ballot(candidate_id):
                 (candidate_id, now()),
             )
         conn.commit()
-
 
 def get_tally():
     with contextlib.closing(get_conn()) as conn:
@@ -271,7 +222,6 @@ def get_tally():
             )
             return cur.fetchall()
 
-
 # ---------- Audit log ----------
 
 def log_event(voter_id, event_type, detail=None, ip_address=None):
@@ -284,14 +234,11 @@ def log_event(voter_id, event_type, detail=None, ip_address=None):
             )
         conn.commit()
 
-
 def get_audit_log(limit=200):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT %s", (limit,))
             return cur.fetchall()
-
-
 # ---------- Admins ----------
 
 def create_admin(username, password_hash):
