@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SecureVote{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">
+      <span class="brand-seal" aria-hidden="true">&#10003;</span>
+      <span class="brand-text">SecureVote<span class="brand-sub">Verified by face, counted in secret</span></span>
+    </a>
+    <nav class="site-nav">
+      <a href="/register">Register</a>
+      <a href="/vote">Vote</a>
+      <a href="/admin/login">Admin</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <span>SecureVote &mdash; college election demo. Not for use in binding civic elections.</span>
+  </footer>
+</body>
+</html>

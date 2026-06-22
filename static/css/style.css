@@ -1,0 +1,319 @@
+/* ===== Design tokens =====
+   Palette:
+     --paper      #F5F6F3  cool paper white, page background
+     --card       #FFFFFF  card surfaces
+     --ink        #1B2A4A  deep navy ink, headings / primary text
+     --ink-soft   #4B5670  secondary text
+     --stamp      #B23A2F  stamp red, required actions / alerts
+     --seal       #2F6E4F  seal green, success / verified states
+     --brass      #A9863F  brass, accents on civic chrome
+     --line       #DAD7CC  hairline rule
+   Type:
+     display: 'Source Serif 4' (ballot / civic document feel)
+     body:    'Inter'
+     mono:    'IBM Plex Mono' (voter IDs, timestamps, tabular data)
+   Signature element: the perforated "ballot stub" card -- used for the
+   voter ID confirmation and the vote receipt, echoing a torn polling stub.
+*/
+
+:root {
+  --paper: #F5F6F3;
+  --card: #FFFFFF;
+  --ink: #1B2A4A;
+  --ink-soft: #4B5670;
+  --stamp: #B23A2F;
+  --seal: #2F6E4F;
+  --brass: #A9863F;
+  --line: #DAD7CC;
+  --radius: 6px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Inter', sans-serif;
+  line-height: 1.5;
+}
+
+h1, h2, h3 {
+  font-family: 'Source Serif 4', serif;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+  margin: 0 0 0.4em;
+}
+
+h1 { font-size: 2.1rem; font-weight: 700; }
+h2 { font-size: 1.4rem; font-weight: 600; }
+
+code, .mono { font-family: 'IBM Plex Mono', monospace; }
+
+a { color: var(--ink); text-decoration: none; }
+
+/* ---- header / footer ---- */
+
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 32px;
+  border-bottom: 2px solid var(--ink);
+  background: var(--card);
+}
+
+.brand { display: flex; align-items: center; gap: 12px; }
+
+.brand-seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--brass);
+  color: var(--brass);
+  font-size: 1.1rem;
+}
+
+.brand-text {
+  font-family: 'Source Serif 4', serif;
+  font-weight: 700;
+  font-size: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.brand-sub {
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+  letter-spacing: 0.03em;
+}
+
+.site-nav a {
+  margin-left: 24px;
+  font-weight: 500;
+  font-size: 0.92rem;
+  border-bottom: 2px solid transparent;
+  padding-bottom: 4px;
+}
+
+.site-nav a:hover { border-bottom-color: var(--brass); }
+
+.site-footer {
+  text-align: center;
+  padding: 28px;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  border-top: 1px solid var(--line);
+  margin-top: 60px;
+}
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 48px 24px 24px;
+}
+
+/* ---- hero (index) ---- */
+
+.hero { text-align: center; padding: 24px 0 40px; }
+.hero p.lede {
+  color: var(--ink-soft);
+  font-size: 1.05rem;
+  max-width: 480px;
+  margin: 12px auto 32px;
+}
+
+.hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+
+/* ---- generic card / form ---- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 32px;
+  margin-bottom: 24px;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin: 18px 0 6px;
+}
+
+input[type=text], input[type=email], input[type=password] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+input:focus, button:focus, a.button:focus {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+button, a.button {
+  display: inline-block;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 12px 22px;
+  border-radius: var(--radius);
+  border: 2px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+  text-align: center;
+}
+
+button.secondary, a.button.secondary {
+  background: transparent;
+  color: var(--ink);
+}
+
+button.stamp { border-color: var(--stamp); background: var(--stamp); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+button:hover, a.button:hover { opacity: 0.88; }
+
+/* ---- camera widget ---- */
+
+.camera-frame {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  margin: 18px auto;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+}
+
+.camera-frame video, .camera-frame canvas { width: 100%; display: block; }
+
+.status-line {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.82rem;
+  margin-top: 10px;
+  min-height: 1.4em;
+}
+
+.status-line.ok { color: var(--seal); }
+.status-line.err { color: var(--stamp); }
+
+/* ---- perforated ballot stub (signature element) ---- */
+
+.ballot-stub {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  padding: 28px 28px 24px;
+  margin: 28px 0;
+}
+
+.ballot-stub::before {
+  content: "";
+  position: absolute;
+  top: -8px; bottom: -8px;
+  left: 78px;
+  width: 0;
+  border-left: 2px dashed var(--line);
+}
+
+.ballot-stub::after {
+  content: "";
+  position: absolute;
+  left: 70px;
+  top: -9px;
+  width: 16px;
+  height: 16px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+}
+
+.ballot-stub .stub-label {
+  position: absolute;
+  left: -10px;
+  top: 18px;
+  transform: rotate(-90deg) translateX(-100%);
+  transform-origin: left top;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.ballot-stub .stub-body { padding-left: 30px; }
+
+/* ---- candidate radio list ---- */
+
+.candidate-list { display: flex; flex-direction: column; gap: 10px; }
+
+.candidate-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.candidate-option:has(input:checked) {
+  border-color: var(--brass);
+  background: #FBF7EE;
+}
+
+.candidate-option input { width: 18px; height: 18px; }
+
+.candidate-name { font-weight: 600; }
+.candidate-position { font-size: 0.82rem; color: var(--ink-soft); }
+
+/* ---- tables (admin) ---- */
+
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--ink-soft); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.badge {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.badge.voted { background: #E7F2EC; color: var(--seal); }
+.badge.pending { background: #F1EFE9; color: var(--ink-soft); }
+.badge.fail { background: #F7E8E6; color: var(--stamp); }
+.badge.success { background: #E7F2EC; color: var(--seal); }
+
+.tally-bar-track { background: var(--line); border-radius: 999px; height: 8px; overflow: hidden; }
+.tally-bar-fill { background: var(--brass); height: 100%; }
+
+.section-divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 40px 0;
+}
+
+@media (max-width: 600px) {
+  .site-header { flex-direction: column; gap: 12px; padding: 16px; }
+  .site-nav a { margin-left: 14px; }
+  .page { padding: 28px 16px; }
+}

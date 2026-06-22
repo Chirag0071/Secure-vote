@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Vote &mdash; SecureVote{% endblock %}
+{% block content %}
+<h1>Verify and vote</h1>
+<p style="color:var(--ink-soft)">Enter your Voter ID, then look at the camera and blink naturally when prompted.</p>
+
+<div class="card">
+  <label for="voter_id">Voter ID</label>
+  <input type="text" id="voter_id" placeholder="e.g. STU2026-0142">
+
+  <label>Live verification</label>
+  <div class="camera-frame">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" style="display:none"></canvas>
+  </div>
+
+  <div style="display:flex; gap:12px; justify-content:center;">
+    <button type="button" id="verifyBtn" class="stamp">Start verification</button>
+  </div>
+  <div id="status" class="status-line"></div>
+</div>
+
+<script src="/static/js/capture.js"></script>
+<script>
+  const statusEl = document.getElementById('status');
+  initCamera('video').catch(err => setStatus('Camera access denied: ' + err.message, true));
+
+  document.getElementById('verifyBtn').addEventListener('click', async () => {
+    const voter_id = document.getElementById('voter_id').value.trim();
+    if (!voter_id) { setStatus('Enter your Voter ID first.', true); return; }
+
+    const btn = document.getElementById('verifyBtn');
+    btn.disabled = true;
+    setStatus('Hold still and blink naturally...', false);
+
+    const frames = await captureBurst('video', 'canvas', 10, 200); // 10 frames over ~2s
+
+    setStatus('Verifying...', false);
+    const res = await fetch('/api/authenticate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({voter_id, frames})
+    });
+    const data = await res.json();
+    if (data.ok) {
+      setStatus('Verified. Loading your ballot...', false);
+      window.location.href = '/ballot';
+    } else {
+      setStatus(data.error || 'Verification failed.', true);
+      btn.disabled = false;
+    }
+  });
+
+  function setStatus(msg, isErr) {
+    statusEl.textContent = msg;
+    statusEl.className = 'status-line ' + (isErr ? 'err' : 'ok');
+  }
+</script>
+{% endblock %}

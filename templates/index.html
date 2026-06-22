@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}SecureVote{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>One face. One vote. No record of which.</h1>
+  <p class="lede">
+    SecureVote authenticates each voter with a live face match and a blink-based
+    liveness check, then casts the ballot into a table that holds no link back
+    to any identity. Built for college-scale elections.
+  </p>
+  <div class="hero-actions">
+    <a class="button" href="/register">Register to vote &rarr;</a>
+    <a class="button secondary" href="/vote">I'm already registered</a>
+  </div>
+</section>
+
+<div class="card">
+  <h2>How it works</h2>
+  <ol>
+    <li><strong>Register once</strong> &mdash; your face encoding is encrypted and stored, never the raw photo.</li>
+    <li><strong>Verify at vote time</strong> &mdash; a short look at the camera confirms it's really you, and that you're not a photo.</li>
+    <li><strong>Vote in secret</strong> &mdash; your ballot is recorded with no voter ID attached to it, anywhere.</li>
+  </ol>
+</div>
+{% endblock %}

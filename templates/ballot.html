@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Ballot &mdash; SecureVote{% endblock %}
+{% block content %}
+<h1>Cast your ballot</h1>
+<p style="color:var(--ink-soft)">You're verified. This screen will not ask for your identity again &mdash; your choice below is recorded with no link to you.</p>
+
+<div class="card">
+  <form id="ballotForm">
+    <div class="candidate-list">
+      {% for c in candidates %}
+      <label class="candidate-option">
+        <input type="radio" name="candidate_id" value="{{ c.id }}" required>
+        <span>
+          <div class="candidate-name">{{ c.name }}</div>
+          <div class="candidate-position">{{ c.position }}</div>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+    <div style="margin-top:24px;">
+      <button type="submit" class="stamp">Cast vote</button>
+    </div>
+    <div id="status" class="status-line"></div>
+  </form>
+</div>
+
+<script>
+  document.getElementById('ballotForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const statusEl = document.getElementById('status');
+    const candidate_id = Number(new FormData(e.target).get('candidate_id'));
+    const res = await fetch('/api/cast-vote', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({candidate_id})
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.querySelector('.card').innerHTML = `
+        <div class="ballot-stub">
+          <span class="stub-label">RECORDED</span>
+          <div class="stub-body">
+            <h2>Your vote is recorded.</h2>
+            <p style="color:var(--ink-soft)">No record of your choice is linked to your identity. Thank you for voting.</p>
+          </div>
+        </div>`;
+    } else {
+      statusEl.textContent = data.error || 'Could not cast vote.';
+      statusEl.className = 'status-line err';
+    }
+  });
+</script>
+{% endblock %}

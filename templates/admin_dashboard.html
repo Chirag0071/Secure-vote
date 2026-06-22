@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Admin dashboard &mdash; SecureVote{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:baseline;">
+  <h1>Election dashboard</h1>
+  <a href="/admin/logout" style="color:var(--ink-soft); font-size:0.85rem;">Log out</a>
+</div>
+
+<div class="card">
+  <h2>Live tally</h2>
+  {% set max_votes = (tally|map(attribute='votes')|list|max) if tally else 0 %}
+  {% for c in tally %}
+  <div style="margin-bottom:14px;">
+    <div style="display:flex; justify-content:space-between; font-size:0.88rem; margin-bottom:4px;">
+      <span><strong>{{ c.name }}</strong> &middot; {{ c.position }}</span>
+      <span class="mono">{{ c.votes }}</span>
+    </div>
+    <div class="tally-bar-track">
+      <div class="tally-bar-fill" style="width: {{ (c.votes / max_votes * 100) if max_votes else 0 }}%;"></div>
+    </div>
+  </div>
+  {% else %}
+  <p style="color:var(--ink-soft)">No candidates yet.</p>
+  {% endfor %}
+
+  <hr class="section-divider" style="margin:24px 0;">
+  <h2 style="font-size:1.1rem;">Add a candidate</h2>
+  <form method="POST" action="/admin/candidates" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+    <div style="flex:1; min-width:160px;">
+      <label for="name" style="margin-top:0;">Name</label>
+      <input type="text" id="name" name="name" required>
+    </div>
+    <div style="flex:1; min-width:160px;">
+      <label for="position" style="margin-top:0;">Position</label>
+      <input type="text" id="position" name="position" required>
+    </div>
+    <button type="submit" class="secondary">Add</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Voter roll ({{ voters|length }})</h2>
+  <table>
+    <thead><tr><th>Voter ID</th><th>Name</th><th>Status</th><th>Registered</th></tr></thead>
+    <tbody>
+      {% for v in voters %}
+      <tr>
+        <td class="mono">{{ v.voter_id }}</td>
+        <td>{{ v.name }}</td>
+        <td>{% if v.has_voted %}<span class="badge voted">Voted</span>{% else %}<span class="badge pending">Not yet</span>{% endif %}</td>
+        <td class="mono">{{ v.registered_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" style="color:var(--ink-soft)">No voters registered yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Authentication audit log</h2>
+  <p style="color:var(--ink-soft); font-size:0.85rem; margin-top:-8px;">
+    Records every verification attempt. Never records which candidate a voter chose.
+  </p>
+  <table>
+    <thead><tr><th>Time (UTC)</th><th>Voter ID</th><th>Event</th><th>Detail</th><th>IP</th></tr></thead>
+    <tbody>
+      {% for e in audit_log %}
+      <tr>
+        <td class="mono">{{ e.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td class="mono">{{ e.voter_id or '&mdash;' }}</td>
+        <td>
+          {% if e.event_type == 'auth_success' or e.event_type == 'vote_cast' or e.event_type == 'register' %}
+          <span class="badge success">{{ e.event_type }}</span>
+          {% else %}
+          <span class="badge fail">{{ e.event_type }}</span>
+          {% endif %}
+        </td>
+        <td style="font-size:0.8rem; color:var(--ink-soft);">{{ e.detail or '' }}</td>
+        <td class="mono">{{ e.ip_address or '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" style="color:var(--ink-soft)">No events yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

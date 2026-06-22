@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Register &mdash; SecureVote{% endblock %}
+{% block content %}
+<h1>Register to vote</h1>
+<p style="color:var(--ink-soft)">This face capture happens once. Look straight at the camera in good light.</p>
+
+<div class="card">
+  <label for="voter_id">Voter ID</label>
+  <input type="text" id="voter_id" placeholder="e.g. STU2026-0142">
+
+  <label for="name">Full name</label>
+  <input type="text" id="name" placeholder="Jordan Avery">
+
+  <label for="email">Email (optional)</label>
+  <input type="email" id="email" placeholder="jordan@college.edu">
+
+  <label>Face capture</label>
+  <div class="camera-frame">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" style="display:none"></canvas>
+  </div>
+
+  <div style="display:flex; gap:12px; justify-content:center;">
+    <button type="button" id="captureBtn" class="secondary">Capture photo</button>
+    <button type="button" id="submitBtn" class="stamp" disabled>Complete registration</button>
+  </div>
+  <div id="status" class="status-line"></div>
+</div>
+
+<script src="/static/js/capture.js"></script>
+<script>
+  let capturedImage = null;
+  const statusEl = document.getElementById('status');
+
+  initCamera('video').catch(err => setStatus('Camera access denied: ' + err.message, true));
+
+  document.getElementById('captureBtn').addEventListener('click', () => {
+    capturedImage = captureFrame('video', 'canvas');
+    document.getElementById('submitBtn').disabled = false;
+    setStatus('Photo captured. Review, then complete registration.', false);
+  });
+
+  document.getElementById('submitBtn').addEventListener('click', async () => {
+    const voter_id = document.getElementById('voter_id').value.trim();
+    const name = document.getElementById('name').value.trim();
+    const email = document.getElementById('email').value.trim();
+    if (!voter_id || !name || !capturedImage) {
+      setStatus('Voter ID, name, and a captured photo are required.', true);
+      return;
+    }
+    setStatus('Submitting...', false);
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({voter_id, name, email, image: capturedImage})
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.querySelector('.card').innerHTML = `
+        <div class="ballot-stub">
+          <span class="stub-label">REGISTERED</span>
+          <div class="stub-body">
+            <h2>You're registered, ${name.split(' ')[0]}.</h2>
+            <p>Voter ID: <code>${voter_id}</code></p>
+            <p style="color:var(--ink-soft)">Keep your Voter ID. You'll need it, plus your face, on election day.</p>
+            <a class="button" href="/vote">Go to voting &rarr;</a>
+          </div>
+        </div>`;
+    } else {
+      setStatus(data.error || 'Registration failed.', true);
+    }
+  });
+
+  function setStatus(msg, isErr) {
+    statusEl.textContent = msg;
+    statusEl.className = 'status-line ' + (isErr ? 'err' : 'ok');
+  }
+</script>
+{% endblock %}
