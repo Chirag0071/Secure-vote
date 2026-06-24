@@ -33,7 +33,7 @@
     btn.disabled = true;
     setStatus('Hold still and blink naturally...', false);
 
-    const frames = await captureBurst('video', 'canvas', 10, 200); // 10 frames over ~2s
+    const frames = await captureBurst('video', 'canvas', 16, 125); // 16 frames over ~2s (8fps -- denser sampling so a brief blink isn't missed between frames)
 
     setStatus('Verifying...', false);
     const res = await fetch('/api/authenticate', {
