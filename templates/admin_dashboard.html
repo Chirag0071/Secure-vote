@@ -8,6 +8,7 @@
 
 <div class="card">
   <h2>Live tally</h2>
+  {% if error %}<div class="status-line err" style="margin-bottom:14px;">{{ error }}</div>{% endif %}
   {% set max_votes = (tally|map(attribute='votes')|list|max) if tally else 0 %}
   {% for c in tally %}
   <div style="margin-bottom:14px;">
@@ -36,25 +37,94 @@
     </div>
     <button type="submit" class="secondary">Add</button>
   </form>
+
+  <hr class="section-divider" style="margin:24px 0;">
+  <h2 style="font-size:1.1rem;">Remove a candidate</h2>
+  {% for c in candidates %}
+  <form method="POST" action="/admin/candidates/{{ c.id }}/delete"
+        style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--line);"
+        onsubmit="return confirm('Remove {{ c.name }}? This cannot be undone.');">
+    <span style="font-size:0.9rem;"><strong>{{ c.name }}</strong> &middot; {{ c.position }}</span>
+    <button type="submit" class="secondary" style="padding:6px 14px; font-size:0.78rem; border-color:var(--stamp); color:var(--stamp);">Remove</button>
+  </form>
+  {% else %}
+  <p style="color:var(--ink-soft); font-size:0.85rem;">No candidates yet.</p>
+  {% endfor %}
 </div>
 
 <div class="card">
   <h2>Voter roll ({{ voters|length }})</h2>
   <table>
-    <thead><tr><th>Voter ID</th><th>Name</th><th>Status</th><th>Registered</th></tr></thead>
+    <thead><tr><th>Photo</th><th>Voter ID</th><th>Name</th><th>Status</th><th>Lock status</th><th>Registered</th></tr></thead>
     <tbody>
       {% for v in voters %}
       <tr>
+        <td>
+          {% if v.photo_base64 %}
+          <img src="{{ v.photo_base64 }}" alt="{{ v.name }}" style="width:36px; height:36px; border-radius:50%; object-fit:cover; border:1px solid var(--line);">
+          {% else %}
+          <span style="display:inline-block; width:36px; height:36px; border-radius:50%; background:var(--paper); border:1px solid var(--line);"></span>
+          {% endif %}
+        </td>
         <td class="mono">{{ v.voter_id }}</td>
         <td>{{ v.name }}</td>
         <td>{% if v.has_voted %}<span class="badge voted">Voted</span>{% else %}<span class="badge pending">Not yet</span>{% endif %}</td>
+        <td>
+          {% if v.locked_until and v.locked_until > now %}
+          <form method="POST" action="/admin/voters/{{ v.voter_id }}/unlock" style="display:flex; align-items:center; gap:8px;">
+            <span class="badge fail">Locked until {{ v.locked_until.strftime('%H:%M:%S') }}</span>
+            <button type="submit" class="secondary" style="padding:4px 10px; font-size:0.72rem;">Unlock</button>
+          </form>
+          {% elif v.failed_attempts and v.failed_attempts > 0 %}
+          <span style="font-size:0.78rem; color:var(--ink-soft);">{{ v.failed_attempts }} failed attempt{{ 's' if v.failed_attempts != 1 else '' }}</span>
+          {% else %}
+          <span style="font-size:0.78rem; color:var(--ink-soft);">&mdash;</span>
+          {% endif %}
+        </td>
         <td class="mono">{{ v.registered_at.strftime('%Y-%m-%d %H:%M') }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4" style="color:var(--ink-soft)">No voters registered yet.</td></tr>
+      <tr><td colspan="6" style="color:var(--ink-soft)">No voters registered yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+</div>
+
+<div class="card">
+  <h2>Flagged duplicate attempts</h2>
+  <p style="color:var(--ink-soft); font-size:0.85rem; margin-top:-8px;">
+    Faces rejected at registration for matching an existing voter. Compare the two photos to confirm it's a real
+    duplicate rather than a false positive from the match threshold. Only populated when
+    <code class="mono">SECUREVOTE_STORE_PHOTOS</code> is enabled.
+  </p>
+  {% for f in flagged_duplicates %}
+  <div style="display:flex; gap:18px; align-items:center; padding:12px 0; border-bottom:1px solid var(--line);">
+    <div style="text-align:center;">
+      {% if f.attempted_photo %}
+      <img src="{{ f.attempted_photo }}" alt="attempted" style="width:64px; height:64px; border-radius:6px; object-fit:cover; border:2px solid var(--stamp);">
+      {% else %}
+      <span style="display:inline-block; width:64px; height:64px; border-radius:6px; background:var(--paper); border:1px solid var(--line);"></span>
+      {% endif %}
+      <div style="font-size:0.7rem; color:var(--ink-soft); margin-top:4px;">attempted as<br><strong>{{ f.attempted_voter_id }}</strong></div>
+    </div>
+    <div style="font-size:1.4rem; color:var(--ink-soft);">vs</div>
+    <div style="text-align:center;">
+      {% if f.matched_photo %}
+      <img src="{{ f.matched_photo }}" alt="matched" style="width:64px; height:64px; border-radius:6px; object-fit:cover; border:2px solid var(--seal);">
+      {% else %}
+      <span style="display:inline-block; width:64px; height:64px; border-radius:6px; background:var(--paper); border:1px solid var(--line);"></span>
+      {% endif %}
+      <div style="font-size:0.7rem; color:var(--ink-soft); margin-top:4px;">existing<br><strong>{{ f.matched_voter_id }}</strong></div>
+    </div>
+    <div style="flex:1;">
+      <div style="font-size:0.85rem;"><strong>{{ f.attempted_name }}</strong> tried to register</div>
+      <div class="mono" style="font-size:0.8rem; color:var(--ink-soft);">distance = {{ "%.3f"|format(f.distance) }}</div>
+      <div class="mono" style="font-size:0.75rem; color:var(--ink-soft);">{{ f.flagged_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+    </div>
+  </div>
+  {% else %}
+  <p style="color:var(--ink-soft); font-size:0.85rem;">No flagged duplicate attempts.</p>
+  {% endfor %}
 </div>
 
 <div class="card">
