@@ -1,3 +1,28 @@
+"""
+database.py
+MySQL data access layer for SecureVote, via PyMySQL.
+
+Connection settings come from environment variables (see README), with
+local defaults for development:
+  SECUREVOTE_DB_HOST      default: localhost
+  SECUREVOTE_DB_PORT      default: 3306
+  SECUREVOTE_DB_USER      default: root
+  SECUREVOTE_DB_PASSWORD  default: "" (empty)
+  SECUREVOTE_DB_NAME      default: securevote
+
+Design note on vote secrecy (unchanged from the SQLite version):
+- `voters` holds identity + encrypted face encoding + has_voted flag.
+- `ballots` holds ONLY candidate_id + timestamp -- there is no voter_id
+  column on this table at all, so there's no join path from a cast ballot
+  back to a voter, even for someone with full DB access.
+- `audit_log` records *authentication* events, never which candidate was
+  chosen.
+
+See schema.sql for the same DDL as a standalone file, useful if you'd
+rather provision the database by hand (e.g. via the mysql CLI or a GUI)
+instead of letting init_db() create it.
+"""
+
 import os
 import datetime
 import contextlib
@@ -10,12 +35,18 @@ DB_USER = os.environ.get("SECUREVOTE_DB_USER", "root")
 DB_PASSWORD = os.environ.get("SECUREVOTE_DB_PASSWORD", "")
 DB_NAME = os.environ.get("SECUREVOTE_DB_NAME", "securevote")
 
+# Managed MySQL hosts (Aiven, PlanetScale, etc.) require TLS. Set
+# SECUREVOTE_DB_SSL_CA to the path of the CA cert they give you (safe to
+# commit -- it's a public cert, not a secret). Leave unset for plain local
+# MySQL, e.g. on localhost during development.
 DB_SSL_CA = os.environ.get("SECUREVOTE_DB_SSL_CA")
+
 
 def _ssl_kwargs():
     if not DB_SSL_CA:
         return {}
     return {"ssl_ca": DB_SSL_CA, "ssl_verify_cert": True}
+
 
 def get_conn(use_db=True):
     return pymysql.connect(
@@ -27,13 +58,21 @@ def get_conn(use_db=True):
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=False,
         charset="utf8mb4",
+        connect_timeout=10,
         **_ssl_kwargs(),
     )
+
 
 def init_db():
     # Step 1: make sure the database itself exists (connect with no db selected).
     conn = pymysql.connect(
-        host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASSWORD, charset="utf8mb4", **_ssl_kwargs()
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        charset="utf8mb4",
+        connect_timeout=10,
+        **_ssl_kwargs(),
     )
     try:
         with conn.cursor() as cur:
@@ -63,7 +102,12 @@ def init_db():
                 ) ENGINE=InnoDB
                 """
             )
-           
+            # Migration for databases created before photo_base64 existed --
+            # CREATE TABLE IF NOT EXISTS above is a no-op on an existing table,
+            # so this adds the column for anyone upgrading in place. Checking
+            # information_schema instead of using "ADD COLUMN IF NOT EXISTS"
+            # directly, since that syntax needs MySQL 8.0.29+ and isn't safe
+            # to assume.
             cur.execute(
                 "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS "
                 "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'voters' AND COLUMN_NAME = 'photo_base64'",
@@ -130,6 +174,7 @@ def init_db():
 def now():
     return datetime.datetime.utcnow()
 
+
 # ---------- Voters ----------
 
 def create_voter(voter_id, name, email, encrypted_encoding, photo_base64=None):
@@ -141,6 +186,7 @@ def create_voter(voter_id, name, email, encrypted_encoding, photo_base64=None):
                 (voter_id, name, email, encrypted_encoding, photo_base64, now()),
             )
         conn.commit()
+
 
 def get_voter(voter_id):
     with contextlib.closing(get_conn()) as conn:
@@ -155,6 +201,7 @@ def mark_voted(voter_id):
         with conn.cursor() as cur:
             cur.execute("UPDATE voters SET has_voted = 1 WHERE voter_id = %s", (voter_id,))
         conn.commit()
+
 
 def record_failed_attempt(voter_id, lockout_minutes=5, max_attempts=5):
     with contextlib.closing(get_conn()) as conn:
