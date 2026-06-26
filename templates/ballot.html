@@ -24,18 +24,20 @@
   </form>
 </div>
 
+<script src="/static/js/capture.js"></script>
 <script>
   document.getElementById('ballotForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const statusEl = document.getElementById('status');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
     const candidate_id = Number(new FormData(e.target).get('candidate_id'));
-    const res = await fetch('/api/cast-vote', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({candidate_id})
-    });
-    const data = await res.json();
-    if (data.ok) {
+
+    submitBtn.disabled = true;
+    statusEl.textContent = 'Submitting...';
+    statusEl.className = 'status-line';
+
+    const result = await postJSON('/api/cast-vote', {candidate_id});
+    if (result.ok) {
       document.querySelector('.card').innerHTML = `
         <div class="ballot-stub">
           <span class="stub-label">RECORDED</span>
@@ -45,8 +47,9 @@
           </div>
         </div>`;
     } else {
-      statusEl.textContent = data.error || 'Could not cast vote.';
+      statusEl.textContent = result.error || 'Could not cast vote.';
       statusEl.className = 'status-line err';
+      submitBtn.disabled = false;
     }
   });
 </script>

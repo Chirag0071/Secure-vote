@@ -36,17 +36,12 @@
     const frames = await captureBurst('video', 'canvas', 16, 125); // 16 frames over ~2s (8fps -- denser sampling so a brief blink isn't missed between frames)
 
     setStatus('Verifying...', false);
-    const res = await fetch('/api/authenticate', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({voter_id, frames})
-    });
-    const data = await res.json();
-    if (data.ok) {
+    const result = await postJSON('/api/authenticate', {voter_id, frames});
+    if (result.ok) {
       setStatus('Verified. Loading your ballot...', false);
       window.location.href = '/ballot';
     } else {
-      setStatus(data.error || 'Verification failed.', true);
+      setStatus(result.error || 'Verification failed.', true);
       btn.disabled = false;
     }
   });
