@@ -1,14 +1,3 @@
-// capture.js -- thin webcam helpers shared by register.html and vote.html
-
-// POSTs JSON with a timeout and consistent error handling. Without this, a
-// slow request (e.g. a cold-start model load on first use after a deploy)
-// or a non-JSON error response (e.g. a gateway timeout page) throws an
-// uncaught error inside an async click handler -- which silently freezes
-// the UI on whatever status text was last set ("Submitting...") with no
-// further feedback, instead of showing the person what actually happened.
-//
-// Returns { ok: true, data } on success, or { ok: false, error } on any
-// failure -- network error, timeout, or a non-OK/non-JSON response.
 async function postJSON(url, body, timeoutMs = 90000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
