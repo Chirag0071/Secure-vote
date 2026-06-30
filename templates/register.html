@@ -12,7 +12,7 @@
   <input type="text" id="name" placeholder="Jordan Avery">
 
   <label for="email">Email (optional)</label>
-  <input type="email" id="email" placeholder="jordan@college.edu">
+  <input type="email" id="email" placeholder="jordan@example.com">
 
   <label>Face capture</label>
   <div class="camera-frame">
@@ -49,13 +49,10 @@
       return;
     }
     setStatus('Submitting...', false);
-    const res = await fetch('/api/register', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({voter_id, name, email, image: capturedImage})
-    });
-    const data = await res.json();
-    if (data.ok) {
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    const result = await postJSON('/api/register', {voter_id, name, email, image: capturedImage});
+    if (result.ok) {
       document.querySelector('.card').innerHTML = `
         <div class="ballot-stub">
           <span class="stub-label">REGISTERED</span>
@@ -67,7 +64,8 @@
           </div>
         </div>`;
     } else {
-      setStatus(data.error || 'Registration failed.', true);
+      setStatus(result.error || 'Registration failed.', true);
+      submitBtn.disabled = false;
     }
   });
 
