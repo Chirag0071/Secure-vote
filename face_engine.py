@@ -2,21 +2,20 @@ import base64
 import io
 import os
 import numpy as np
-import cv2
+import dlib_backend as face_recognition
 from PIL import Image
 from cryptography.fernet import Fernet
-from insightface.app import FaceAnalysis
 
 KEY_PATH = os.path.join(os.path.dirname(__file__), "secret.key")
 
-MATCH_TOLERANCE = 0.55       # voting-time 1:1 check (cosine similarity >= 0.45)
-DUPLICATE_TOLERANCE = 0.62   # registration-time 1:N check, deliberately looser
+MATCH_TOLERANCE = 0.5        # voting-time 1:1 check
+DUPLICATE_TOLERANCE = 0.6    # registration-time 1:N check, deliberately looser
 
-RELATIVE_DROP_THRESHOLD = 0.08  
+# Relative drop required somewhere in the liveness burst to count as a real
+# blink (8% dip from the burst's own open-eye baseline). Backend-agnostic --
+# doesn't care which landmark source produced the EAR values.
+RELATIVE_DROP_THRESHOLD = 0.08
 MIN_FRAMES_FOR_BLINK = 3
-
-RIGHT_EYE_IDX = list(range(36, 42))
-LEFT_EYE_IDX = list(range(42, 48))
 
 
 def _get_or_create_key():
@@ -42,21 +41,17 @@ def _get_or_create_key():
 
 _fernet = Fernet(_get_or_create_key())
 
-_face_app = None
 
-
-def _get_face_app():
-    global _face_app
-    if _face_app is None:
-        print("[SecureVote] Loading ArcFace (buffalo_l) models -- may download on first run...")
-        _face_app = FaceAnalysis(
-            name="buffalo_l",
-            allowed_modules=["detection", "recognition", "landmark_3d_68"],
-            providers=["CPUExecutionProvider"],
-        )
-        _face_app.prepare(ctx_id=0, det_size=(640, 640))
-        print("[SecureVote] ArcFace models ready.")
-    return _face_app
+def warm_up():
+    """
+    Forces dlib's models to load now rather than on whatever request needs
+    them first. Much less critical than it was for InsightFace (no network
+    download, no multi-hundred-MB pack) but kept for consistency and so the
+    very first real request isn't the one paying dlib's one-time model-load
+    cost either.
+    """
+    blank = np.zeros((10, 10, 3), dtype=np.uint8)
+    face_recognition.face_locations(blank, model="hog")
 
 
 def decode_base64_image(b64_string):
@@ -68,24 +63,21 @@ def decode_base64_image(b64_string):
     return np.array(image)
 
 
-def _detect_faces(image_rgb):
-    # InsightFace follows OpenCV convention and expects BGR, not RGB.
-    image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
-    return _get_face_app().get(image_bgr)
-
-
 def extract_encoding(image_rgb):
     """
-    Returns (encoding, error). encoding is a 512-d numpy array (ArcFace's
-    normalized embedding) or None. error is a human-readable string if
-    extraction failed.
+    Returns (encoding, error). encoding is a 128-d numpy array or None.
+    error is a human-readable string if extraction failed.
     """
-    faces = _detect_faces(image_rgb)
-    if len(faces) == 0:
+    face_locations = face_recognition.face_locations(image_rgb, model="hog")
+    if len(face_locations) == 0:
         return None, "No face detected. Make sure your face is clearly visible."
-    if len(faces) > 1:
+    if len(face_locations) > 1:
         return None, "Multiple faces detected. Only one person should be in frame."
-    return faces[0].normed_embedding.astype(np.float64), None
+
+    encodings = face_recognition.face_encodings(image_rgb, known_face_locations=face_locations)
+    if not encodings:
+        return None, "Could not extract face features. Try better lighting."
+    return encodings[0], None
 
 
 def encrypt_encoding(encoding):
@@ -101,9 +93,12 @@ def decrypt_encoding(blob):
 def _distance(live_encoding, stored_encrypted_blob):
     stored_encoding = decrypt_encoding(stored_encrypted_blob)
     if stored_encoding.shape != live_encoding.shape:
-       return 2.0  # max possible value of (1 - cosine similarity)
-    cosine_similarity = float(np.dot(live_encoding, stored_encoding))
-    return 1.0 - cosine_similarity
+        # Most likely cause: this row was registered under a previous
+        # embedding model (different vector size, e.g. ArcFace's 512-d)
+        # and never re-registered. Treat as "definitely not the same
+        # person" rather than crashing the whole request.
+        return 999.0
+    return float(face_recognition.face_distance([stored_encoding], live_encoding)[0])
 
 
 def match(live_encoding, stored_encrypted_blob):
@@ -143,24 +138,21 @@ def check_liveness(frame_burst_rgb):
     frame_burst_rgb: list of RGB numpy arrays captured over ~2 seconds.
     Returns (is_live: bool, user_reason: str, debug_detail: str).
     user_reason is safe to show the voter. debug_detail includes the actual
-    EAR values computed -- meant for the audit log only, not the voter's
-    browser, so it can stay verbose without being confusing or unprofessional
-    in the UI.
+    EAR values computed -- meant for the audit log only.
     """
     if len(frame_burst_rgb) < MIN_FRAMES_FOR_BLINK:
         return False, "Not enough frames captured for liveness check.", "insufficient frames captured"
 
     ear_sequence = []
     for frame in frame_burst_rgb:
-        faces = _detect_faces(frame)
-        if not faces:
+        landmarks_list = face_recognition.face_landmarks(frame)
+        if not landmarks_list:
             continue
-        landmarks = getattr(faces[0], "landmark_3d_68", None)
-        if landmarks is None:
+        landmarks = landmarks_list[0]
+        if "left_eye" not in landmarks or "right_eye" not in landmarks:
             continue
-        landmarks_2d = np.asarray(landmarks)[:, :2]
-        left_ear = _eye_aspect_ratio(landmarks_2d[LEFT_EYE_IDX])
-        right_ear = _eye_aspect_ratio(landmarks_2d[RIGHT_EYE_IDX])
+        left_ear = _eye_aspect_ratio(landmarks["left_eye"])
+        right_ear = _eye_aspect_ratio(landmarks["right_eye"])
         ear_sequence.append((left_ear + right_ear) / 2.0)
 
     ear_debug = "[" + ", ".join(f"{v:.2f}" for v in ear_sequence) + "]"
