@@ -7,6 +7,7 @@ class RegisterIn(BaseModel):
     name: str
     email: Optional[str] = ""
     image: str
+    constituency: str
 
 
 class AuthenticateIn(BaseModel):
