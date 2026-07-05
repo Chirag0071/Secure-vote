@@ -93,6 +93,7 @@ def init_db():
                     voter_id        VARCHAR(64) PRIMARY KEY,
                     name            VARCHAR(255) NOT NULL,
                     email           VARCHAR(255),
+                    constituency    VARCHAR(255) NOT NULL DEFAULT '',
                     face_encoding   BLOB NOT NULL,
                     photo_base64    MEDIUMTEXT NULL,
                     has_voted       TINYINT(1) NOT NULL DEFAULT 0,
@@ -102,12 +103,7 @@ def init_db():
                 ) ENGINE=InnoDB
                 """
             )
-            # Migration for databases created before photo_base64 existed --
-            # CREATE TABLE IF NOT EXISTS above is a no-op on an existing table,
-            # so this adds the column for anyone upgrading in place. Checking
-            # information_schema instead of using "ADD COLUMN IF NOT EXISTS"
-            # directly, since that syntax needs MySQL 8.0.29+ and isn't safe
-            # to assume.
+            # Migration: photo_base64
             cur.execute(
                 "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS "
                 "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'voters' AND COLUMN_NAME = 'photo_base64'",
@@ -115,15 +111,41 @@ def init_db():
             )
             if cur.fetchone()["cnt"] == 0:
                 cur.execute("ALTER TABLE voters ADD COLUMN photo_base64 MEDIUMTEXT NULL")
+            # Migration: constituency on voters
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'voters' AND COLUMN_NAME = 'constituency'",
+                (DB_NAME,),
+            )
+            if cur.fetchone()["cnt"] == 0:
+                cur.execute("ALTER TABLE voters ADD COLUMN constituency VARCHAR(255) NOT NULL DEFAULT ''")
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS candidates (
-                    id       INT AUTO_INCREMENT PRIMARY KEY,
-                    name     VARCHAR(255) NOT NULL,
-                    position VARCHAR(255) NOT NULL
+                    id           INT AUTO_INCREMENT PRIMARY KEY,
+                    name         VARCHAR(255) NOT NULL,
+                    party        VARCHAR(255) NOT NULL DEFAULT '',
+                    position     VARCHAR(255) NOT NULL,
+                    constituency VARCHAR(255) NOT NULL DEFAULT ''
                 ) ENGINE=InnoDB
                 """
             )
+            # Migration: constituency on candidates
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'candidates' AND COLUMN_NAME = 'constituency'",
+                (DB_NAME,),
+            )
+            if cur.fetchone()["cnt"] == 0:
+                cur.execute("ALTER TABLE candidates ADD COLUMN constituency VARCHAR(255) NOT NULL DEFAULT ''")
+            # Migration: party on candidates
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'candidates' AND COLUMN_NAME = 'party'",
+                (DB_NAME,),
+            )
+            if cur.fetchone()["cnt"] == 0:
+                cur.execute("ALTER TABLE candidates ADD COLUMN party VARCHAR(255) NOT NULL DEFAULT ''")
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS ballots (
@@ -177,13 +199,13 @@ def now():
 
 # ---------- Voters ----------
 
-def create_voter(voter_id, name, email, encrypted_encoding, photo_base64=None):
+def create_voter(voter_id, name, email, constituency, encrypted_encoding, photo_base64=None):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO voters (voter_id, name, email, face_encoding, photo_base64, registered_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (voter_id, name, email, encrypted_encoding, photo_base64, now()),
+                "INSERT INTO voters (voter_id, name, email, constituency, face_encoding, photo_base64, registered_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (voter_id, name, email, constituency, encrypted_encoding, photo_base64, now()),
             )
         conn.commit()
 
@@ -257,7 +279,7 @@ def list_voters():
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT voter_id, name, email, has_voted, registered_at, photo_base64, "
+                "SELECT voter_id, name, email, constituency, has_voted, registered_at, photo_base64, "
                 "failed_attempts, locked_until FROM voters "
                 "ORDER BY registered_at DESC"
             )
@@ -266,17 +288,18 @@ def list_voters():
 
 # ---------- Candidates ----------
 
-def add_candidate(name, position):
+def add_candidate(name, party, position, constituency):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
-            cur.execute("INSERT INTO candidates (name, position) VALUES (%s, %s)", (name, position))
+            cur.execute(
+                "INSERT INTO candidates (name, party, position, constituency) VALUES (%s, %s, %s, %s)",
+                (name, party, position, constituency)
+            )
         conn.commit()
 
 
 def delete_candidate(candidate_id):
-    """Returns (ok, error). Fails safely if the candidate already has votes
-    (the ballots table's foreign key blocks the delete rather than silently
-    orphaning votes or letting you erase someone's tally)."""
+    """Returns (ok, error). Fails safely if the candidate already has votes."""
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             try:
@@ -288,11 +311,24 @@ def delete_candidate(candidate_id):
                 return False, "Can't remove this candidate -- they've already received votes."
 
 
-def list_candidates():
+def list_candidates(constituency=None):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM candidates ORDER BY position, name")
+            if constituency:
+                cur.execute(
+                    "SELECT * FROM candidates WHERE constituency = %s ORDER BY name",
+                    (constituency,)
+                )
+            else:
+                cur.execute("SELECT * FROM candidates ORDER BY constituency, name")
             return cur.fetchall()
+
+
+def list_constituencies():
+    with contextlib.closing(get_conn()) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT constituency FROM candidates ORDER BY constituency")
+            return [r["constituency"] for r in cur.fetchall()]
 
 
 # ---------- Ballots (anonymized) ----------
@@ -312,11 +348,11 @@ def get_tally():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT c.id, c.name, c.position, COUNT(b.id) AS votes
+                SELECT c.party, COUNT(b.id) AS votes
                 FROM candidates c
                 LEFT JOIN ballots b ON b.candidate_id = c.id
-                GROUP BY c.id, c.name, c.position
-                ORDER BY c.position, votes DESC
+                GROUP BY c.party
+                ORDER BY votes DESC
                 """
             )
             return cur.fetchall()

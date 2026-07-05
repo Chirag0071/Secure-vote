@@ -25,9 +25,22 @@ def bootstrap():
         db.create_admin(admin_username, auth.hash_password(default_pw))
         print(f"[SecureVote] Created admin user '{admin_username}' / '{default_pw}' -- change this.")
     if not db.list_candidates():
-        db.add_candidate("Sample Candidate A", "Student Body President")
-        db.add_candidate("Sample Candidate B", "Student Body President")
-        print("[SecureVote] Seeded sample candidates -- replace via admin dashboard.")
+        position = "Member of Legislative Assembly (MLA)"
+        constituencies = [
+            "Lucknow Cantt",
+            "Varanasi North",
+            "Agra South",
+            "Allahabad West",
+        ]
+        parties = [
+            ("Lok Vikas Party", ["Anil Mishra", "Sunita Sharma", "Rajesh Verma", "Priya Singh"]),
+            ("Nyay Morcha",     ["Geeta Yadav", "Mohan Gupta",  "Kavita Tiwari", "Suresh Pandey"]),
+            ("Pragati Dal",     ["Vikas Kumar", "Anita Joshi",  "Deepak Saxena", "Meera Chauhan"]),
+        ]
+        for i, constituency in enumerate(constituencies):
+            for party_name, candidates in parties:
+                db.add_candidate(candidates[i], party_name, position, constituency)
+        print("[SecureVote] Seeded UP Vidhan Sabha candidates across 4 constituencies.")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -63,10 +76,11 @@ def api_register(payload: RegisterIn, request: Request):
     voter_id = payload.voter_id.strip()
     name = payload.name.strip()
     email = (payload.email or "").strip()
+    constituency = (payload.constituency or "").strip()
 
-    if not voter_id or not name or not payload.image:
+    if not voter_id or not name or not payload.image or not constituency:
         return JSONResponse(
-            {"ok": False, "error": "Voter ID, name, and a captured photo are required."}, status_code=400
+            {"ok": False, "error": "Voter ID, name, constituency, and a captured photo are required."}, status_code=400
         )
 
     if db.get_voter(voter_id):
@@ -102,7 +116,7 @@ def api_register(payload: RegisterIn, request: Request):
     store_photos = os.environ.get("SECUREVOTE_STORE_PHOTOS", "false").lower() == "true"
     photo_to_store = payload.image if store_photos else None
 
-    db.create_voter(voter_id, name, email, encrypted, photo_base64=photo_to_store)
+    db.create_voter(voter_id, name, email, constituency, encrypted, photo_base64=photo_to_store)
     db.log_event(voter_id, "register", ip_address=_client_ip(request))
     return {"ok": True}
 
@@ -166,7 +180,8 @@ def api_authenticate(payload: AuthenticateIn, request: Request):
 
     request.session["authenticated_voter_id"] = voter_id
     request.session["auth_expires"] = time.time() + AUTH_WINDOW_SECONDS
-    return {"ok": True, "candidates": db.list_candidates()}
+    voter_constituency = voter.get("constituency", "")
+    return {"ok": True, "candidates": db.list_candidates(constituency=voter_constituency), "constituency": voter_constituency}
 
 def _current_authenticated_voter(request: Request) -> Optional[str]:
     voter_id = request.session.get("authenticated_voter_id")
@@ -180,7 +195,10 @@ def ballot_page(request: Request):
     voter_id = _current_authenticated_voter(request)
     if not voter_id:
         return RedirectResponse("/vote", status_code=303)
-    return templates.TemplateResponse(request, "ballot.html", {"candidates": db.list_candidates()})
+    voter = db.get_voter(voter_id)
+    constituency = voter.get("constituency", "") if voter else ""
+    candidates = db.list_candidates(constituency=constituency)
+    return templates.TemplateResponse(request, "ballot.html", {"candidates": candidates})
 
 @app.post("/api/cast-vote")
 def api_cast_vote(payload: CastVoteIn, request: Request):
@@ -254,18 +272,18 @@ def admin_dashboard(request: Request, error: Optional[str] = None):
             "voters": db.list_voters(),
             "tally": db.get_tally(),
             "audit_log": db.get_audit_log(),
-            "candidates": db.list_candidates(),
+            "constituencies": db.list_constituencies(),
             "flagged_duplicates": db.list_flagged_duplicates(),
             "error": error,
             "now": datetime.datetime.utcnow(),
         },
     )
 @app.post("/admin/candidates")
-def admin_add_candidate(request: Request, name: str = Form(...), position: str = Form(...)):
+def admin_add_candidate(request: Request, name: str = Form(...), party: str = Form(...), position: str = Form(...), constituency: str = Form(...)):
     if not _require_admin(request):
         return RedirectResponse("/admin/login", status_code=303)
-    if name.strip() and position.strip():
-        db.add_candidate(name.strip(), position.strip())
+    if name.strip() and party.strip() and position.strip() and constituency.strip():
+        db.add_candidate(name.strip(), party.strip(), position.strip(), constituency.strip())
     return RedirectResponse("/admin/dashboard", status_code=303)
 
 @app.post("/admin/candidates/{candidate_id}/delete")

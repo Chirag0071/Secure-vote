@@ -1,18 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Register &mdash; SecureVote{% endblock %}
+{% block title %}Register &mdash; UP Vidhan Sabha Election{% endblock %}
 {% block content %}
-<h1>Register to vote</h1>
-<p style="color:var(--ink-soft)">This face capture happens once. Look straight at the camera in good light.</p>
+<h1>Voter Registration</h1>
+<p style="color:var(--ink-soft)">Register once using your face. Make sure you select your correct constituency.</p>
 
 <div class="card">
   <label for="voter_id">Voter ID</label>
-  <input type="text" id="voter_id" placeholder="e.g. STU2026-0142">
+  <input type="text" id="voter_id" placeholder="e.g. UP/23/142/0001234">
 
   <label for="name">Full name</label>
-  <input type="text" id="name" placeholder="Jordan Avery">
+  <input type="text" id="name" placeholder="Chirag Verma">
 
   <label for="email">Email (optional)</label>
-  <input type="email" id="email" placeholder="jordan@example.com">
+  <input type="email" id="email" placeholder="voter@example.com">
+
+  <label for="constituency">Constituency</label>
+  <select id="constituency" style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius); font-family:Inter,sans-serif; font-size:0.95rem; background:var(--paper); color:var(--ink);">
+    <option value="">-- Select your constituency --</option>
+    <option value="Lucknow Cantt">Lucknow Cantt</option>
+    <option value="Varanasi North">Varanasi North</option>
+    <option value="Agra South">Agra South</option>
+    <option value="Allahabad West">Allahabad West</option>
+  </select>
 
   <label>Face capture</label>
   <div class="camera-frame">
@@ -44,14 +53,15 @@
     const voter_id = document.getElementById('voter_id').value.trim();
     const name = document.getElementById('name').value.trim();
     const email = document.getElementById('email').value.trim();
-    if (!voter_id || !name || !capturedImage) {
-      setStatus('Voter ID, name, and a captured photo are required.', true);
+    const constituency = document.getElementById('constituency').value;
+    if (!voter_id || !name || !constituency || !capturedImage) {
+      setStatus('Voter ID, name, constituency, and a captured photo are required.', true);
       return;
     }
     setStatus('Submitting...', false);
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
-    const result = await postJSON('/api/register', {voter_id, name, email, image: capturedImage});
+    const result = await postJSON('/api/register', {voter_id, name, email, constituency, image: capturedImage});
     if (result.ok) {
       document.querySelector('.card').innerHTML = `
         <div class="ballot-stub">
@@ -59,7 +69,8 @@
           <div class="stub-body">
             <h2>You're registered, ${name.split(' ')[0]}.</h2>
             <p>Voter ID: <code>${voter_id}</code></p>
-            <p style="color:var(--ink-soft)">Keep your Voter ID. You'll need it, plus your face, on election day.</p>
+            <p>Constituency: <strong>${constituency}</strong></p>
+            <p style="color:var(--ink-soft)">Keep your Voter ID. You'll need it, plus your face, on polling day.</p>
             <a class="button" href="/vote">Go to voting &rarr;</a>
           </div>
         </div>`;

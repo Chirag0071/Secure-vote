@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}SecureVote{% endblock %}
+{% block title %}SecureVote &mdash; UP Vidhan Sabha Election{% endblock %}
 {% block content %}
 <section class="hero">
-  <h1>One face. One vote. No record of which.</h1>
+  <h1>Uttar Pradesh Vidhan Sabha Election</h1>
   <p class="lede">
-    SecureVote authenticates each voter with a live face match and a blink-based
-    liveness check, then casts the ballot into a table that holds no link back
-    to any identity. Built for college-scale elections.
+    Face-authenticated voting demo for the UP state assembly election.
+    Verify once with your face, vote for your constituency's MLA candidate —
+    with your choice recorded in complete secrecy.
   </p>
   <div class="hero-actions">
     <a class="button" href="/register">Register to vote &rarr;</a>
@@ -17,9 +17,16 @@
 <div class="card">
   <h2>How it works</h2>
   <ol>
-    <li><strong>Register once</strong> &mdash; your face encoding is encrypted and stored, never the raw photo.</li>
-    <li><strong>Verify at vote time</strong> &mdash; a short look at the camera confirms it's really you, and that you're not a photo.</li>
-    <li><strong>Vote in secret</strong> &mdash; your ballot is recorded with no voter ID attached to it, anywhere.</li>
+    <li><strong>Register once</strong> &mdash; select your constituency, capture your face. Your face encoding is encrypted and stored, never the raw photo.</li>
+    <li><strong>Verify at polling time</strong> &mdash; enter your Voter ID and look at the camera. A live blink check confirms you're a real person, not a photo.</li>
+    <li><strong>Vote for your MLA</strong> &mdash; you see only candidates from your constituency. Your ballot is cast with no link back to your identity.</li>
   </ol>
+</div>
+
+<div class="card" style="background:#FBF7EE; border-color:var(--brass);">
+  <p style="font-size:0.85rem; color:var(--ink-soft); margin:0;">
+    <strong>Demo notice:</strong> This is a proof-of-concept system for educational purposes.
+    Fictional parties and candidates are used. Not for use in any real or binding election.
+  </p>
 </div>
 {% endblock %}
