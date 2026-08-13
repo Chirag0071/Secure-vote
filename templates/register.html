@@ -4,9 +4,16 @@
 <h1>Voter Registration</h1>
 <p style="color:var(--ink-soft)">Register once using your face. Make sure you select your correct constituency.</p>
 
+{% if not phase_open %}
+<div class="card" style="background:#FBF7EE; border-color:var(--brass); text-align:center;">
+  <span class="badge pending" style="margin-bottom:10px;">{{ phase_label }}</span>
+  <p style="color:var(--ink-soft); margin:10px 0 0;">{{ phase_notice }}</p>
+</div>
+{% else %}
 <div class="card">
   <label for="voter_id">Voter ID</label>
   <input type="text" id="voter_id" placeholder="e.g. UP/23/142/0001234">
+  <div id="voterIdHint" style="font-size:0.78rem; color:var(--ink-soft); margin-top:4px;">Format: UP/23/142/0001234</div>
 
   <label for="name">Full name</label>
   <input type="text" id="name" placeholder="Chirag Verma">
@@ -28,6 +35,9 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" style="display:none"></canvas>
   </div>
+  <div style="display:flex; gap:12px; justify-content:center; margin-bottom:8px;">
+    <button type="button" id="switchCameraBtn" class="secondary" style="display:none; font-size:0.8rem; padding:8px 14px;">Switch camera</button>
+  </div>
 
   <div style="display:flex; gap:12px; justify-content:center;">
     <button type="button" id="captureBtn" class="secondary">Capture photo</button>
@@ -38,10 +48,27 @@
 
 <script src="/static/js/capture.js"></script>
 <script>
+  const VOTER_ID_PATTERN = /^UP\/\d{2}\/\d{3}\/\d{7}$/;
   let capturedImage = null;
   const statusEl = document.getElementById('status');
 
-  initCamera('video').catch(err => setStatus('Camera access denied: ' + err.message, true));
+  initCamera('video', 'switchCameraBtn').catch(err => setStatus('Camera access denied: ' + err.message, true));
+
+  const voterIdInput = document.getElementById('voter_id');
+  const voterIdHint = document.getElementById('voterIdHint');
+  voterIdInput.addEventListener('input', () => {
+    const v = voterIdInput.value.trim();
+    if (!v) {
+      voterIdHint.textContent = 'Format: UP/23/142/0001234';
+      voterIdHint.style.color = 'var(--ink-soft)';
+    } else if (VOTER_ID_PATTERN.test(v)) {
+      voterIdHint.textContent = 'Voter ID format looks good.';
+      voterIdHint.style.color = 'var(--seal)';
+    } else {
+      voterIdHint.textContent = 'Must match format: UP/23/142/0001234';
+      voterIdHint.style.color = 'var(--stamp)';
+    }
+  });
 
   document.getElementById('captureBtn').addEventListener('click', () => {
     capturedImage = captureFrame('video', 'canvas');
@@ -56,6 +83,10 @@
     const constituency = document.getElementById('constituency').value;
     if (!voter_id || !name || !constituency || !capturedImage) {
       setStatus('Voter ID, name, constituency, and a captured photo are required.', true);
+      return;
+    }
+    if (!VOTER_ID_PATTERN.test(voter_id)) {
+      setStatus('Voter ID must match the format UP/23/142/0001234.', true);
       return;
     }
     setStatus('Submitting...', false);
@@ -75,7 +106,7 @@
           </div>
         </div>`;
     } else {
-      setStatus(result.error || 'Registration failed.', true);
+      setStatus(result.error || (result.data && result.data.detail && result.data.detail[0] && result.data.detail[0].msg) || 'Registration failed.', true);
       submitBtn.disabled = false;
     }
   });
@@ -85,4 +116,5 @@
     statusEl.className = 'status-line ' + (isErr ? 'err' : 'ok');
   }
 </script>
+{% endif %}
 {% endblock %}
