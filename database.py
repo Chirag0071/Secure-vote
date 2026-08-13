@@ -1,53 +1,28 @@
-"""
-database.py
-MySQL data access layer for SecureVote, via PyMySQL.
-
-Connection settings come from environment variables (see README), with
-local defaults for development:
-  SECUREVOTE_DB_HOST      default: localhost
-  SECUREVOTE_DB_PORT      default: 3306
-  SECUREVOTE_DB_USER      default: root
-  SECUREVOTE_DB_PASSWORD  default: "" (empty)
-  SECUREVOTE_DB_NAME      default: securevote
-
-Design note on vote secrecy (unchanged from the SQLite version):
-- `voters` holds identity + encrypted face encoding + has_voted flag.
-- `ballots` holds ONLY candidate_id + timestamp -- there is no voter_id
-  column on this table at all, so there's no join path from a cast ballot
-  back to a voter, even for someone with full DB access.
-- `audit_log` records *authentication* events, never which candidate was
-  chosen.
-
-See schema.sql for the same DDL as a standalone file, useful if you'd
-rather provision the database by hand (e.g. via the mysql CLI or a GUI)
-instead of letting init_db() create it.
-"""
-
 import os
 import datetime
 import contextlib
 import pymysql
 import pymysql.cursors
-
+ 
 DB_HOST = os.environ.get("SECUREVOTE_DB_HOST", "localhost")
 DB_PORT = int(os.environ.get("SECUREVOTE_DB_PORT", "3306"))
 DB_USER = os.environ.get("SECUREVOTE_DB_USER", "root")
 DB_PASSWORD = os.environ.get("SECUREVOTE_DB_PASSWORD", "")
 DB_NAME = os.environ.get("SECUREVOTE_DB_NAME", "securevote")
-
+ 
 # Managed MySQL hosts (Aiven, PlanetScale, etc.) require TLS. Set
 # SECUREVOTE_DB_SSL_CA to the path of the CA cert they give you (safe to
 # commit -- it's a public cert, not a secret). Leave unset for plain local
 # MySQL, e.g. on localhost during development.
 DB_SSL_CA = os.environ.get("SECUREVOTE_DB_SSL_CA")
-
-
+ 
+ 
 def _ssl_kwargs():
     if not DB_SSL_CA:
         return {}
     return {"ssl_ca": DB_SSL_CA, "ssl_verify_cert": True}
-
-
+ 
+ 
 def get_conn(use_db=True):
     return pymysql.connect(
         host=DB_HOST,
@@ -61,8 +36,8 @@ def get_conn(use_db=True):
         connect_timeout=10,
         **_ssl_kwargs(),
     )
-
-
+ 
+ 
 def init_db():
     # Step 1: make sure the database itself exists (connect with no db selected).
     conn = pymysql.connect(
@@ -83,7 +58,7 @@ def init_db():
         conn.commit()
     finally:
         conn.close()
-
+ 
     # Step 2: create tables (idempotent).
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -97,12 +72,21 @@ def init_db():
                     face_encoding   BLOB NOT NULL,
                     photo_base64    MEDIUMTEXT NULL,
                     has_voted       TINYINT(1) NOT NULL DEFAULT 0,
+                    voted_at        DATETIME NULL,
                     registered_at   DATETIME NOT NULL,
                     failed_attempts INT NOT NULL DEFAULT 0,
                     locked_until    DATETIME NULL
                 ) ENGINE=InnoDB
                 """
             )
+            # Migration: voted_at
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'voters' AND COLUMN_NAME = 'voted_at'",
+                (DB_NAME,),
+            )
+            if cur.fetchone()["cnt"] == 0:
+                cur.execute("ALTER TABLE voters ADD COLUMN voted_at DATETIME NULL")
             # Migration: photo_base64
             cur.execute(
                 "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS "
@@ -190,15 +174,27 @@ def init_db():
                 ) ENGINE=InnoDB
                 """
             )
+            # Single-row table holding the current election phase.
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS election_settings (
+                    id    INT PRIMARY KEY DEFAULT 1,
+                    phase VARCHAR(32) NOT NULL DEFAULT 'registration'
+                ) ENGINE=InnoDB
+                """
+            )
+            cur.execute("SELECT COUNT(*) AS cnt FROM election_settings WHERE id = 1")
+            if cur.fetchone()["cnt"] == 0:
+                cur.execute("INSERT INTO election_settings (id, phase) VALUES (1, 'registration')")
         conn.commit()
-
-
+ 
+ 
 def now():
     return datetime.datetime.utcnow()
-
-
+ 
+ 
 # ---------- Voters ----------
-
+ 
 def create_voter(voter_id, name, email, constituency, encrypted_encoding, photo_base64=None):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -208,23 +204,26 @@ def create_voter(voter_id, name, email, constituency, encrypted_encoding, photo_
                 (voter_id, name, email, constituency, encrypted_encoding, photo_base64, now()),
             )
         conn.commit()
-
-
+ 
+ 
 def get_voter(voter_id):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM voters WHERE voter_id = %s", (voter_id,))
             row = cur.fetchone()
             return row
-
-
+ 
+ 
 def mark_voted(voter_id):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
-            cur.execute("UPDATE voters SET has_voted = 1 WHERE voter_id = %s", (voter_id,))
+            cur.execute(
+                "UPDATE voters SET has_voted = 1, voted_at = %s WHERE voter_id = %s",
+                (now(), voter_id),
+            )
         conn.commit()
-
-
+ 
+ 
 def record_failed_attempt(voter_id, lockout_minutes=5, max_attempts=5):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -240,8 +239,8 @@ def record_failed_attempt(voter_id, lockout_minutes=5, max_attempts=5):
                     "UPDATE voters SET locked_until = %s WHERE voter_id = %s", (lock_until, voter_id)
                 )
         conn.commit()
-
-
+ 
+ 
 def reset_failed_attempts(voter_id):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -250,20 +249,20 @@ def reset_failed_attempts(voter_id):
                 (voter_id,),
             )
         conn.commit()
-
-
+ 
+ 
 def is_locked(voter):
     if not voter.get("locked_until"):
         return False
     return datetime.datetime.utcnow() < voter["locked_until"]
-
-
+ 
+ 
 def list_all_encodings():
     """
     Returns [(voter_id, encrypted_face_encoding), ...] for every registered
     voter. Used at registration time to check whether a new face already
     belongs to someone registered under a different voter_id.
-
+ 
     Note: this is an O(N) scan against every registered voter, run once per
     new registration -- fine at college scale (hundreds to low thousands of
     voters), not how you'd do this at national scale (that needs an indexed
@@ -273,8 +272,8 @@ def list_all_encodings():
         with conn.cursor() as cur:
             cur.execute("SELECT voter_id, face_encoding FROM voters")
             return [(r["voter_id"], r["face_encoding"]) for r in cur.fetchall()]
-
-
+ 
+ 
 def list_voters():
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -284,10 +283,10 @@ def list_voters():
                 "ORDER BY registered_at DESC"
             )
             return cur.fetchall()
-
-
+ 
+ 
 # ---------- Candidates ----------
-
+ 
 def add_candidate(name, party, position, constituency):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -296,8 +295,8 @@ def add_candidate(name, party, position, constituency):
                 (name, party, position, constituency)
             )
         conn.commit()
-
-
+ 
+ 
 def delete_candidate(candidate_id):
     """Returns (ok, error). Fails safely if the candidate already has votes."""
     with contextlib.closing(get_conn()) as conn:
@@ -309,8 +308,8 @@ def delete_candidate(candidate_id):
             except pymysql.err.IntegrityError:
                 conn.rollback()
                 return False, "Can't remove this candidate -- they've already received votes."
-
-
+ 
+ 
 def list_candidates(constituency=None):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -322,17 +321,17 @@ def list_candidates(constituency=None):
             else:
                 cur.execute("SELECT * FROM candidates ORDER BY constituency, name")
             return cur.fetchall()
-
-
+ 
+ 
 def list_constituencies():
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT DISTINCT constituency FROM candidates ORDER BY constituency")
             return [r["constituency"] for r in cur.fetchall()]
-
-
+ 
+ 
 # ---------- Ballots (anonymized) ----------
-
+ 
 def cast_ballot(candidate_id):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -341,8 +340,8 @@ def cast_ballot(candidate_id):
                 (candidate_id, now()),
             )
         conn.commit()
-
-
+ 
+ 
 def get_tally():
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -356,10 +355,10 @@ def get_tally():
                 """
             )
             return cur.fetchall()
-
-
+ 
+ 
 # ---------- Audit log ----------
-
+ 
 def log_event(voter_id, event_type, detail=None, ip_address=None):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -369,17 +368,17 @@ def log_event(voter_id, event_type, detail=None, ip_address=None):
                 (voter_id, event_type, detail, ip_address, now()),
             )
         conn.commit()
-
-
+ 
+ 
 def get_audit_log(limit=200):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT %s", (limit,))
             return cur.fetchall()
-
-
+ 
+ 
 # ---------- Admins ----------
-
+ 
 def create_admin(username, password_hash):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -388,17 +387,17 @@ def create_admin(username, password_hash):
                 (username, password_hash),
             )
         conn.commit()
-
-
+ 
+ 
 def get_admin(username):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM admins WHERE username = %s", (username,))
             return cur.fetchone()
-
-
+ 
+ 
 # ---------- Flagged duplicate attempts (admin review) ----------
-
+ 
 def create_flagged_duplicate(attempted_voter_id, attempted_name, matched_voter_id, distance, photo_base64):
     with contextlib.closing(get_conn()) as conn:
         with conn.cursor() as cur:
@@ -409,8 +408,45 @@ def create_flagged_duplicate(attempted_voter_id, attempted_name, matched_voter_i
                 (attempted_voter_id, attempted_name, matched_voter_id, distance, photo_base64, now()),
             )
         conn.commit()
-
-
+ 
+ 
+def get_voter_stats():
+    """Total registered voters, total votes cast, and turnout % -- safe to show
+    publicly since it never reveals who voted for whom, just headcounts."""
+    with contextlib.closing(get_conn()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS total, SUM(has_voted) AS voted FROM voters"
+            )
+            row = cur.fetchone()
+            total = row["total"] or 0
+            voted = row["voted"] or 0
+            turnout = round((voted / total) * 100, 1) if total else 0.0
+            return {"total_registered": total, "total_voted": voted, "turnout_pct": turnout}
+ 
+ 
+# ---------- Election phase ----------
+ 
+VALID_PHASES = ("registration", "voting", "results")
+ 
+ 
+def get_election_phase():
+    with contextlib.closing(get_conn()) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT phase FROM election_settings WHERE id = 1")
+            row = cur.fetchone()
+            return row["phase"] if row else "registration"
+ 
+ 
+def set_election_phase(phase):
+    if phase not in VALID_PHASES:
+        raise ValueError(f"Invalid phase: {phase}")
+    with contextlib.closing(get_conn()) as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE election_settings SET phase = %s WHERE id = 1", (phase,))
+        conn.commit()
+ 
+ 
 def list_flagged_duplicates(limit=50):
     """
     Joins in the matched voter's own stored photo (if they have one and
