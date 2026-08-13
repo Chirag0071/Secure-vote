@@ -1,4 +1,5 @@
 import os
+import io
 import time
 import datetime
 from contextlib import asynccontextmanager
@@ -6,7 +7,7 @@ from typing import Optional
 from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -14,6 +15,12 @@ import database as db
 import face_engine
 import auth
 from schemas import RegisterIn, AuthenticateIn, CastVoteIn
+
+PHASE_LABELS = {
+    "registration": "Registration open",
+    "voting": "Voting open",
+    "results": "Results declared",
+}
 
 AUTH_WINDOW_SECONDS = 120 
 
@@ -61,18 +68,58 @@ templates = Jinja2Templates(directory="templates")
 def _client_ip(request: Request) -> Optional[str]:
     return request.client.host if request.client else None
 
+def _phase_notice(phase: str) -> str:
+    return {
+        "registration": "Registration is currently open. Voting has not started yet.",
+        "voting": "Voting is currently open. Registration is now closed.",
+        "results": "Results have been declared. Registration and voting are closed.",
+    }.get(phase, "")
+
 # ---------------- Voter-facing ----------------
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {
+            "stats": db.get_voter_stats(),
+            "phase": db.get_election_phase(),
+            "phase_label": PHASE_LABELS.get(db.get_election_phase(), ""),
+        },
+    )
+
+@app.get("/results", response_class=HTMLResponse)
+def results_page(request: Request):
+    phase = db.get_election_phase()
+    return templates.TemplateResponse(
+        request,
+        "results.html",
+        {
+            "phase": phase,
+            "phase_label": PHASE_LABELS.get(phase, ""),
+            "declared": phase == "results",
+            "tally": db.get_tally() if phase == "results" else [],
+            "stats": db.get_voter_stats(),
+        },
+    )
 
 @app.get("/register", response_class=HTMLResponse)
 def register_page(request: Request):
-    return templates.TemplateResponse(request, "register.html")
+    phase = db.get_election_phase()
+    return templates.TemplateResponse(
+        request,
+        "register.html",
+        {"phase": phase, "phase_open": phase == "registration", "phase_notice": _phase_notice(phase)},
+    )
 
 @app.post("/api/register")
 def api_register(payload: RegisterIn, request: Request):
+    if db.get_election_phase() != "registration":
+        return JSONResponse(
+            {"ok": False, "error": "Registration is closed for this phase of the election."}, status_code=403
+        )
+
     voter_id = payload.voter_id.strip()
     name = payload.name.strip()
     email = (payload.email or "").strip()
@@ -122,10 +169,20 @@ def api_register(payload: RegisterIn, request: Request):
 
 @app.get("/vote", response_class=HTMLResponse)
 def vote_page(request: Request):
-    return templates.TemplateResponse(request, "vote.html")
+    phase = db.get_election_phase()
+    return templates.TemplateResponse(
+        request,
+        "vote.html",
+        {"phase": phase, "phase_open": phase == "voting", "phase_notice": _phase_notice(phase)},
+    )
 
 @app.post("/api/authenticate")
 def api_authenticate(payload: AuthenticateIn, request: Request):
+    if db.get_election_phase() != "voting":
+        return JSONResponse(
+            {"ok": False, "error": "Voting is not open right now."}, status_code=403
+        )
+
     voter_id = payload.voter_id.strip()
     frames_b64 = payload.frames or []
     ip = _client_ip(request)
@@ -143,7 +200,12 @@ def api_authenticate(payload: AuthenticateIn, request: Request):
         )
 
     if voter["has_voted"]:
-        return JSONResponse({"ok": False, "error": "This Voter ID has already cast a ballot."}, status_code=403)
+        voted_at = voter.get("voted_at")
+        when = voted_at.strftime("%d %b %Y at %H:%M UTC") if voted_at else "an earlier session"
+        return JSONResponse(
+            {"ok": False, "error": f"Your vote was cast on {when}. Each voter may vote only once."},
+            status_code=403,
+        )
 
     if len(frames_b64) < face_engine.MIN_FRAMES_FOR_BLINK:
         return JSONResponse(
@@ -192,6 +254,8 @@ def _current_authenticated_voter(request: Request) -> Optional[str]:
 
 @app.get("/ballot", response_class=HTMLResponse)
 def ballot_page(request: Request):
+    if db.get_election_phase() != "voting":
+        return RedirectResponse("/vote", status_code=303)
     voter_id = _current_authenticated_voter(request)
     if not voter_id:
         return RedirectResponse("/vote", status_code=303)
@@ -202,12 +266,22 @@ def ballot_page(request: Request):
 
 @app.post("/api/cast-vote")
 def api_cast_vote(payload: CastVoteIn, request: Request):
+    if db.get_election_phase() != "voting":
+        return JSONResponse({"ok": False, "error": "Voting is not open right now."}, status_code=403)
+
     voter_id = _current_authenticated_voter(request)
     if not voter_id:
         return JSONResponse({"ok": False, "error": "Session expired. Please re-authenticate."}, status_code=401)
 
     voter = db.get_voter(voter_id)
-    if not voter or voter["has_voted"]:
+    if voter and voter["has_voted"]:
+        voted_at = voter.get("voted_at")
+        when = voted_at.strftime("%d %b %Y at %H:%M UTC") if voted_at else "an earlier session"
+        return JSONResponse(
+            {"ok": False, "error": f"Your vote was cast on {when}. Each voter may vote only once."},
+            status_code=403,
+        )
+    if not voter:
         return JSONResponse({"ok": False, "error": "This Voter ID has already cast a ballot."}, status_code=403)
 
     candidate_ids = {c["id"] for c in db.list_candidates()}
@@ -265,6 +339,7 @@ def admin_logout():
 def admin_dashboard(request: Request, error: Optional[str] = None):
     if not _require_admin(request):
         return RedirectResponse("/admin/login", status_code=303)
+    phase = db.get_election_phase()
     return templates.TemplateResponse(
         request,
         "admin_dashboard.html",
@@ -274,10 +349,90 @@ def admin_dashboard(request: Request, error: Optional[str] = None):
             "audit_log": db.get_audit_log(),
             "constituencies": db.list_constituencies(),
             "flagged_duplicates": db.list_flagged_duplicates(),
+            "stats": db.get_voter_stats(),
+            "phase": phase,
+            "phase_label": PHASE_LABELS.get(phase, phase),
             "error": error,
             "now": datetime.datetime.utcnow(),
         },
     )
+
+@app.post("/admin/election-phase")
+def admin_set_phase(request: Request, phase: str = Form(...)):
+    if not _require_admin(request):
+        return RedirectResponse("/admin/login", status_code=303)
+    if phase in db.VALID_PHASES:
+        db.set_election_phase(phase)
+        db.log_event(None, "phase_change", detail=f"phase set to {phase}", ip_address=_client_ip(request))
+    return RedirectResponse("/admin/dashboard", status_code=303)
+
+@app.get("/admin/export/results.pdf")
+def admin_export_results_pdf(request: Request):
+    if not _require_admin(request):
+        return RedirectResponse("/admin/login", status_code=303)
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas as pdfcanvas
+
+    tally = db.get_tally()
+    stats = db.get_voter_stats()
+    generated_at = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    margin = 20 * mm
+    y = height - margin
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(margin, y, "SecureVote -- Election Results")
+    y -= 10 * mm
+
+    c.setFont("Helvetica", 10)
+    c.drawString(margin, y, f"Generated: {generated_at}")
+    y -= 6 * mm
+    c.drawString(
+        margin, y,
+        f"Registered voters: {stats['total_registered']}    "
+        f"Votes cast: {stats['total_voted']}    "
+        f"Turnout: {stats['turnout_pct']}%",
+    )
+    y -= 12 * mm
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(margin, y, "Party")
+    c.drawString(width - margin - 30 * mm, y, "Votes")
+    y -= 4 * mm
+    c.line(margin, y, width - margin, y)
+    y -= 8 * mm
+
+    c.setFont("Helvetica", 11)
+    if tally:
+        for row in tally:
+            if y < margin + 20 * mm:
+                c.showPage()
+                y = height - margin
+                c.setFont("Helvetica", 11)
+            c.drawString(margin, y, str(row["party"]))
+            c.drawRightString(width - margin, y, str(row["votes"]))
+            y -= 8 * mm
+    else:
+        c.drawString(margin, y, "No votes cast yet.")
+        y -= 8 * mm
+
+    c.setFont("Helvetica-Oblique", 8)
+    c.drawString(margin, margin, "SecureVote demo -- fictional parties, not a real or binding election.")
+    c.showPage()
+    c.save()
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=securevote-results.pdf"},
+    )
+
 @app.post("/admin/candidates")
 def admin_add_candidate(request: Request, name: str = Form(...), party: str = Form(...), position: str = Form(...), constituency: str = Form(...)):
     if not _require_admin(request):
