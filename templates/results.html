@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Results &mdash; UP Vidhan Sabha Election{% endblock %}
+{% block content %}
+<h1>Election results</h1>
+<p style="color:var(--ink-soft)">Live party-wise tally for the UP Vidhan Sabha election demo.</p>
+
+{% if declared %}
+<div class="card">
+  <h2>Final tally</h2>
+  {% set max_votes = (tally|map(attribute='votes')|list|max) if tally else 0 %}
+  {% for c in tally %}
+  <div style="margin-bottom:16px;">
+    <div style="display:flex; justify-content:space-between; font-size:0.95rem; margin-bottom:5px;">
+      <strong>{{ c.party }}</strong>
+      <span class="mono">{{ c.votes }} votes</span>
+    </div>
+    <div class="tally-bar-track">
+      <div class="tally-bar-fill" style="width: {{ (c.votes / max_votes * 100) if max_votes else 0 }}%;"></div>
+    </div>
+  </div>
+  {% else %}
+  <p style="color:var(--ink-soft)">No votes cast yet.</p>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card" style="text-align:center;">
+  <span class="badge pending" style="margin-bottom:12px;">{{ phase_label }}</span>
+  <p style="color:var(--ink-soft); margin:12px 0 0;">
+    Results have not been declared yet. Check back once the election officer marks results as declared.
+  </p>
+</div>
+{% endif %}
+
+<div class="card" style="display:flex; gap:32px; flex-wrap:wrap;">
+  <div>
+    <div class="mono" style="font-size:1.4rem; font-weight:600;">{{ stats.total_registered }}</div>
+    <div style="font-size:0.78rem; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em;">Registered voters</div>
+  </div>
+  <div>
+    <div class="mono" style="font-size:1.4rem; font-weight:600;">{{ stats.total_voted }}</div>
+    <div style="font-size:0.78rem; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em;">Votes cast</div>
+  </div>
+  <div>
+    <div class="mono" style="font-size:1.4rem; font-weight:600; color:var(--seal);">{{ stats.turnout_pct }}%</div>
+    <div style="font-size:0.78rem; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em;">Turnout</div>
+  </div>
+</div>
+{% endblock %}
