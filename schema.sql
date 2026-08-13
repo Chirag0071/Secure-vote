@@ -7,18 +7,22 @@ CREATE TABLE IF NOT EXISTS voters (
     voter_id        VARCHAR(64) PRIMARY KEY,
     name            VARCHAR(255) NOT NULL,
     email           VARCHAR(255),
+    constituency    VARCHAR(255) NOT NULL DEFAULT '',
     face_encoding   BLOB NOT NULL,
     photo_base64    MEDIUMTEXT NULL,
     has_voted       TINYINT(1) NOT NULL DEFAULT 0,
+    voted_at        DATETIME NULL,
     registered_at   DATETIME NOT NULL,
     failed_attempts INT NOT NULL DEFAULT 0,
     locked_until    DATETIME NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS candidates (
-    id       INT AUTO_INCREMENT PRIMARY KEY,
-    name     VARCHAR(255) NOT NULL,
-    position VARCHAR(255) NOT NULL
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    name         VARCHAR(255) NOT NULL,
+    party        VARCHAR(255) NOT NULL DEFAULT '',
+    position     VARCHAR(255) NOT NULL,
+    constituency VARCHAR(255) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS ballots (
@@ -44,7 +48,6 @@ CREATE TABLE IF NOT EXISTS admins (
     password_hash VARCHAR(255) NOT NULL
 ) ENGINE=InnoDB;
 
-
 CREATE TABLE IF NOT EXISTS flagged_duplicates (
     id                 INT AUTO_INCREMENT PRIMARY KEY,
     attempted_voter_id VARCHAR(64) NOT NULL,
@@ -54,3 +57,14 @@ CREATE TABLE IF NOT EXISTS flagged_duplicates (
     photo_base64       MEDIUMTEXT NULL,
     flagged_at         DATETIME NOT NULL
 ) ENGINE=InnoDB;
+
+-- Single-row table holding the current election phase:
+-- 'registration' | 'voting' | 'results'
+CREATE TABLE IF NOT EXISTS election_settings (
+    id    INT PRIMARY KEY DEFAULT 1,
+    phase VARCHAR(32) NOT NULL DEFAULT 'registration'
+) ENGINE=InnoDB;
+
+INSERT INTO election_settings (id, phase)
+SELECT 1, 'registration'
+WHERE NOT EXISTS (SELECT 1 FROM election_settings WHERE id = 1);
