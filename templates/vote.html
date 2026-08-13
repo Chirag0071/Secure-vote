@@ -4,14 +4,23 @@
 <h1>Verify and vote</h1>
 <p style="color:var(--ink-soft)">Enter your Voter ID, then look at the camera and blink naturally when prompted.</p>
 
+{% if not phase_open %}
+<div class="card" style="background:#FBF7EE; border-color:var(--brass); text-align:center;">
+  <span class="badge pending" style="margin-bottom:10px;">{{ phase_label }}</span>
+  <p style="color:var(--ink-soft); margin:10px 0 0;">{{ phase_notice }}</p>
+</div>
+{% else %}
 <div class="card">
   <label for="voter_id">Voter ID</label>
-  <input type="text" id="voter_id" placeholder="e.g. STU2026-0142">
+  <input type="text" id="voter_id" placeholder="e.g. UP/23/142/0001234">
 
   <label>Live verification</label>
   <div class="camera-frame">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" style="display:none"></canvas>
+  </div>
+  <div style="display:flex; gap:12px; justify-content:center; margin-bottom:8px;">
+    <button type="button" id="switchCameraBtn" class="secondary" style="display:none; font-size:0.8rem; padding:8px 14px;">Switch camera</button>
   </div>
 
   <div style="display:flex; gap:12px; justify-content:center;">
@@ -23,7 +32,7 @@
 <script src="/static/js/capture.js"></script>
 <script>
   const statusEl = document.getElementById('status');
-  initCamera('video').catch(err => setStatus('Camera access denied: ' + err.message, true));
+  initCamera('video', 'switchCameraBtn').catch(err => setStatus('Camera access denied: ' + err.message, true));
 
   document.getElementById('verifyBtn').addEventListener('click', async () => {
     const voter_id = document.getElementById('voter_id').value.trim();
@@ -56,4 +65,5 @@
     statusEl.className = 'status-line ' + (isErr ? 'err' : 'ok');
   }
 </script>
+{% endif %}
 {% endblock %}
