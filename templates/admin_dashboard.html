@@ -7,7 +7,40 @@
 </div>
 
 <div class="card">
-  <h2>Live tally &mdash; Overall</h2>
+  <h2>Election phase</h2>
+  <p style="color:var(--ink-soft); font-size:0.85rem; margin-top:-8px;">
+    Controls what voters can do. Registration and voting are mutually exclusive by phase.
+  </p>
+  <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:14px;">
+    <span class="badge {{ 'success' if phase == 'voting' else ('voted' if phase == 'results' else 'pending') }}">Current: {{ phase_label }}</span>
+    <form method="POST" action="/admin/election-phase" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button type="submit" name="phase" value="registration" class="secondary" style="padding:8px 14px; font-size:0.82rem;" {% if phase == 'registration' %}disabled{% endif %}>Registration open</button>
+      <button type="submit" name="phase" value="voting" class="secondary" style="padding:8px 14px; font-size:0.82rem;" {% if phase == 'voting' %}disabled{% endif %}>Voting open</button>
+      <button type="submit" name="phase" value="results" class="stamp" style="padding:8px 14px; font-size:0.82rem;" {% if phase == 'results' %}disabled{% endif %}>Declare results</button>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="display:flex; gap:32px; flex-wrap:wrap;">
+  <div>
+    <div class="mono" style="font-size:1.4rem; font-weight:600;">{{ stats.total_registered }}</div>
+    <div style="font-size:0.78rem; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em;">Registered voters</div>
+  </div>
+  <div>
+    <div class="mono" style="font-size:1.4rem; font-weight:600;">{{ stats.total_voted }}</div>
+    <div style="font-size:0.78rem; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em;">Votes cast</div>
+  </div>
+  <div>
+    <div class="mono" style="font-size:1.4rem; font-weight:600; color:var(--seal);">{{ stats.turnout_pct }}%</div>
+    <div style="font-size:0.78rem; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em;">Turnout</div>
+  </div>
+</div>
+
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:baseline;">
+    <h2>Live tally &mdash; Overall</h2>
+    <a href="/admin/export/results.pdf" class="button secondary" style="padding:8px 14px; font-size:0.82rem;">Export PDF &darr;</a>
+  </div>
   {% if error %}<div class="status-line err" style="margin-bottom:14px;">{{ error }}</div>{% endif %}
   {% set max_votes = (tally|map(attribute='votes')|list|max) if tally else 0 %}
   {% for c in tally %}
